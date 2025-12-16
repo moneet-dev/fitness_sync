@@ -1,0 +1,130 @@
+import React, { useState, useEffect } from 'react';
+
+// NOTE: Assume your api.ts file is imported correctly, 
+// using the named exports for the actual data fetching.
+// If your file is named 'api.ts' in './services/api.ts'
+// And the exports are:
+// export const getMetrics = () => apiRequest('/data/metrics');
+// export const getTasks = () => apiRequest('/data/tasks');
+
+// For this example, we'll mock the imports assuming the structure below:
+const mockApi = {
+    getMetrics: async () => {
+        // Simulate a network delay and success
+        await new Promise(resolve => setTimeout(resolve, 500)); 
+        return [
+            { id: 1, type: 'Weight', value: 75.5 },
+            { id: 2, type: 'Steps', value: 10500 }
+        ];
+    },
+    getTasks: async () => {
+        // Simulate a network delay and success
+        await new Promise(resolve => setTimeout(resolve, 300));
+        return [
+            { id: 1, title: 'Morning workout', completed: true },
+            { id: 2, title: 'Log meal entry', completed: false }
+        ];
+    }
+};
+
+const App = () => {
+    const [metrics, setMetrics] = useState([]);
+    const [tasks, setTasks] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    // useEffect is the correct place to call async API functions
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                // Call the async API functions using 'await'
+                const metricsData = await mockApi.getMetrics();
+                const tasksData = await mockApi.getTasks();
+
+                setMetrics(metricsData);
+                setTasks(tasksData);
+            } catch (err) {
+                console.error("API Fetch Error:", err);
+                setError("Failed to load data. Please try again.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // Execute the async function
+        fetchData();
+
+    }, []); // Empty dependency array means run once on mount
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+            <header className="text-center mb-10">
+                <h1 className="text-4xl font-extrabold text-blue-600">Health Dashboard</h1>
+                <p className="text-gray-500">Data fetched from the Async API Service</p>
+            </header>
+
+            <div className="max-w-4xl mx-auto">
+                {loading && (
+                    <div className="flex justify-center items-center h-48">
+                        <svg className="animate-spin -ml-1 mr-3 h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="text-lg text-gray-700">Loading data...</p>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700 rounded-lg shadow-md">
+                        <p className="font-bold">Error:</p>
+                        <p>{error}</p>
+                    </div>
+                )}
+
+                {!loading && !error && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Metrics Card */}
+                        <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow border border-blue-100">
+                            <h2 className="text-2xl font-semibold mb-4 text-blue-700 border-b pb-2">Health Metrics</h2>
+                            {metrics.length > 0 ? (
+                                <ul className="space-y-3">
+                                    {metrics.map(metric => (
+                                        <li key={metric.id} className="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
+                                            <span className="font-medium text-gray-800">{metric.type}</span>
+                                            <span className="text-lg font-bold text-blue-600">{metric.value}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-gray-500">No metrics recorded yet.</p>
+                            )}
+                        </div>
+
+                        {/* Tasks Card */}
+                        <div className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow border border-green-100">
+                            <h2 className="text-2xl font-semibold mb-4 text-green-700 border-b pb-2">Daily Tasks</h2>
+                            {tasks.length > 0 ? (
+                                <ul className="space-y-3">
+                                    {tasks.map(task => (
+                                        <li key={task.id} className={`flex justify-between items-center p-3 rounded-lg ${task.completed ? 'bg-green-100 line-through text-gray-500' : 'bg-green-50 text-gray-800'}`}>
+                                            <span className="font-medium">{task.title}</span>
+                                            {task.completed && (
+                                                <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-gray-500">All tasks completed!</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default App;
