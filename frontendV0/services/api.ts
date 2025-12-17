@@ -66,8 +66,7 @@ export const getTasks = () => apiRequest('/data/tasks');
 export const getGoals = () => apiRequest('/data/goals');
 export const getAppointments = () => apiRequest('/appointments');
 export const getProfessionals = () => apiRequest('/users/professionals');
-export const getClients = (allClients: boolean = false) => 
-  apiRequest(`/users/clients?all_clients=${allClients}`);
+export const getClients = () => apiRequest('/users/clients');
 export const createGoal = (goalData: { title: string; description: string; deadline: string; }) => apiRequest('/data/goals', {
   method: 'POST',
   // normalize status value to match backend convention
@@ -99,7 +98,16 @@ export const getMessages = (conversationId: number) => apiRequest(`/chat/message
 
 export const sendMessage = (conversationId: number, content: string) => apiRequest('/chat/messages', { method: 'POST', body: { conversation_id: conversationId, content } });
 
-export const createConversation = (participantId: number) => apiRequest(`/chat/conversations?participant_id=${participantId}`, { method: 'POST' });
+export const createConversation = (participantIds: number | number[]) => {
+  // Support both single ID (backwards compat) and array of IDs
+  const ids = Array.isArray(participantIds) ? participantIds : [participantIds];
+  return apiRequest('/chat/conversations', { 
+    method: 'POST', 
+    body: { participant_ids: ids } 
+  });
+};
+
+export const getCareTeamConversation = () => apiRequest('/chat/care-team-thread', { method: 'POST' });
 
 export const getConversations = () => apiRequest('/chat/conversations');
 
@@ -119,6 +127,18 @@ export const updateUserProfile = (userData: { full_name?: string; email?: string
 
 // Assignments
 export const getMyProfessionals = () => apiRequest('/users/my-professionals');
+
+export const generateInviteCode = (expiresInHours: number = 24) => 
+  apiRequest('/users/invite-code', { 
+    method: 'POST', 
+    body: { expires_in_hours: expiresInHours } 
+  });
+
+export const connectWithCode = (inviteCode: string) => 
+  apiRequest('/users/connect', { 
+    method: 'POST', 
+    body: { invite_code: inviteCode } 
+  });
 
 export const createAssignment = (clientId: number, professionalId: number) => 
   apiRequest('/users/assignments', { 

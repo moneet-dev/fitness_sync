@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  Modal,
 } from 'react-native';
 import { BottomNavigation, Header, MessageBubble } from '@/components';
 import { 
@@ -18,7 +19,8 @@ import {
   sendMessage, 
   markConversationRead, 
   updateTypingStatus, 
-  getTypingStatus 
+  getTypingStatus,
+  getConversations
 } from '@/services/api';
 import { useUser } from '@/context/UserContext';
 
@@ -31,8 +33,34 @@ export default function ChatScreenRoute() {
   const [message, setMessage] = useState('');
   const [messagesState, setMessagesState] = useState<any[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [conversationTitle, setConversationTitle] = useState('Chat');
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
   const typingTimeoutRef = useRef<any>(null);
+
+  // Fetch conversation details for header
+  useEffect(() => {
+    const fetchConversationInfo = async () => {
+      if (!convId) return;
+      try {
+        const conversations = await getConversations();
+        const currentConv = conversations.find((c: any) => c.id === convId);
+        if (currentConv) {
+          // Use "Care Team" for groups, or participant name for 1:1
+          if (currentConv.is_group) {
+            setConversationTitle('Care Team');
+          } else if (currentConv.other_participant_name) {
+            setConversationTitle(currentConv.other_participant_name);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch conversation info', err);
+      }
+    };
+    fetchConversationInfo();
+  }, [convId]);
 
   // Mark conversation as read when opening
   useEffect(() => {
@@ -149,6 +177,37 @@ export default function ChatScreenRoute() {
     console.log('Attachment pressed');
   };
 
+  const handleRequestAppointment = () => {
+    // Pre-fill with tomorrow's date at 10:00 AM
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setSelectedDate(tomorrow.toISOString().split('T')[0]);
+    setSelectedTime('10:00');
+    setShowAppointmentModal(true);
+  };
+
+  const handleConfirmAppointmentRequest = () => {
+    if (!selectedDate || !selectedTime) {
+      Alert.alert('Error', 'Please select both date and time');
+      return;
+    }
+    
+    const dateObj = new Date(selectedDate + 'T' + selectedTime);
+    const dateStr = dateObj.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const timeStr = dateObj.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const requestMessage = `I would like to request an appointment for ${dateStr} at ${timeStr}.`;
+    setMessage(requestMessage);
+    setShowAppointmentModal(false);
+  };
+
   const messages = messagesState.length > 0 ? messagesState.map((m) => ({
     id: String(m.id),
     message: m.content,
@@ -171,7 +230,7 @@ export default function ChatScreenRoute() {
 
       {/* Header */}
       <Header
-        title="Chat"
+        title={conversationTitle}
         showBackButton
         onBackPress={handleBackPress}
         rightIcon="notifications"
@@ -204,6 +263,17 @@ export default function ChatScreenRoute() {
         )}
       </ScrollView>
 
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        <TouchableOpacity 
+          style={styles.quickActionButton}
+          onPress={handleRequestAppointment}
+        >
+          <Ionicons name="calendar-outline" size={18} color="#20B2AA" />
+          <Text style={styles.quickActionText}>Request Appointment</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Message Input */}
       <View style={styles.inputContainer}>
         <TouchableOpacity style={styles.attachmentButton} onPress={handleAttachment}>
@@ -231,6 +301,62 @@ export default function ChatScreenRoute() {
         tabs={bottomTabs}
         role={isClient ? 'client' : 'professional'}
       />
+
+      {/* Appointment Request Modal */}
+      <Modal
+        visible={showAppointmentModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAppointmentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Request Appointment</Text>
+              <TouchableOpacity onPress={() => setShowAppointmentModal(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Select Date</Text>
+            <TextInput
+              style={styles.dateInput}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#999"
+              value={selectedDate}
+              onChangeText={setSelectedDate}
+            />
+
+            <Text style={styles.modalLabel}>Select Time</Text>
+            <TextInput
+              style={styles.dateInput}
+              placeholder="HH:MM (e.g., 14:30)"
+              placeholderTextColor="#999"
+              value={selectedTime}
+              onChangeText={setSelectedTime}
+            />
+
+            <Text style={styles.modalDescription}>
+              This will send a message to your care team requesting an appointment.
+            </Text>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.modalCancelButton}
+                onPress={() => setShowAppointmentModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.modalConfirmButton}
+                onPress={handleConfirmAppointmentRequest}
+              >
+                <Text style={styles.modalConfirmText}>Insert Request</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -292,5 +418,126 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     fontStyle: 'italic',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F8F8F8',
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  quickActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#20B2AA',
+    marginRight: 8,
+  },
+  quickActionText: {
+    fontSize: 13,
+    color: '#20B2AA',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  dateInput: {
+    backgroundColor: '#F0F0F0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 8,
+  },
+  dateTimeContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  dateTimeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F0F0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  dateTimeText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+  },
+  modalDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    color: '#666',
+    fontWeight: '500',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#20B2AA',
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
   },
 });

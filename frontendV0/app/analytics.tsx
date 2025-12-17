@@ -33,12 +33,22 @@ export default function AnalyticsScreen() {
 
   useEffect(() => {
     const fetchData = async () => {
+      // Wait for user context to load
+      if (userLoading) return;
+      
+      // Don't fetch if user data isn't available
+      if (!isClient && !isProfessional) {
+        console.warn('[Analytics] User role not determined yet');
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         if (isProfessional) {
           const stats = await getProfessionalStats();
           setProfessionalStats(stats);
-        } else {
+        } else if (isClient) {
           const metricsData = await getMetrics();
           setMetrics(metricsData);
         }
@@ -49,11 +59,8 @@ export default function AnalyticsScreen() {
       }
     };
 
-    // Only fetch data after user context has loaded
-    if (!userLoading) {
-      fetchData();
-    }
-  }, [isProfessional, userLoading]);
+    fetchData();
+  }, [isProfessional, isClient, userLoading]);
   
   const handleBackPress = () => {
     router.back();
@@ -274,9 +281,9 @@ export default function AnalyticsScreen() {
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => router.push('/client-assignment')}
+          onPress={() => router.push('/professional-dashboard')}
         >
-          <Text style={styles.actionButtonText}>Assign New Clients</Text>
+          <Text style={styles.actionButtonText}>View My Invite Code</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: '#2196F3' }]}

@@ -7,75 +7,199 @@ from sqlalchemy import func, and_, case
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Conversation, Message, Participant, User, TypingIndicator
-from ..schemas import ConversationRead, MessageCreate, MessageRead, TypingStatus
+from ..models import Conversation, Message, Participant, User, TypingIndicator, Assignment
+from ..schemas import ConversationRead, ConversationCreate, MessageCreate, MessageRead, TypingStatus
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/conversations", response_model=ConversationRead)
-async def get_or_create_conversation(
-    participant_id: int,
+async def create_conversation(
+    payload: ConversationCreate,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    # Check if conversation exists
-    # This is a simplified check; for production, a more robust query is needed
-    # to find a conversation where BOTH users are participants.
+    """Create a new conversation with multiple participants.
     
-    # Find conversations where current user is a participant
+    The current user is automatically added as a participant if not in the list.
+    For backwards compatibility, also supports query parameter ?participant_id=X
+    """
+    participant_ids = list(set(payload.participant_ids))  # Remove duplicates
+    
+    # Ensure current user is in the participant list
+    if current_user.id not in participant_ids:
+        participant_ids.append(current_user.id)
+    
+    # Sort for consistent comparison
+    participant_ids.sort()
+    
+    # Check if a conversation with this exact set of participants already exists
+    # Get all conversations where current user is a participant
     stmt = select(Participant.conversation_id).where(Participant.user_id == current_user.id)
     result = await session.execute(stmt)
     my_conv_ids = result.scalars().all()
-
+    
     if my_conv_ids:
-        # Check if target user is in any of these conversations
-        stmt = select(Participant).where(
-            Participant.conversation_id.in_(my_conv_ids),
-            Participant.user_id == participant_id
-        )
-        result = await session.execute(stmt)
-        existing_participant = result.scalar_one_or_none()
-
-        if existing_participant:
-            # Found existing conversation
-            stmt = select(Conversation).where(Conversation.id == existing_participant.conversation_id)
+        # For each conversation, check if it has the exact same participant set
+        for conv_id in my_conv_ids:
+            stmt = select(Participant.user_id).where(Participant.conversation_id == conv_id)
             result = await session.execute(stmt)
-            conversation = result.scalar_one()
+            conv_participant_ids = sorted(result.scalars().all())
             
-            # Hacky way to get other participant name for now
-            stmt = select(User).where(User.id == participant_id)
-            res = await session.execute(stmt)
-            other_user = res.scalar_one()
-            
-            return ConversationRead(
-                id=conversation.id,
-                created_at=conversation.created_at,
-                other_participant_name=other_user.full_name,
-                last_message=None,
-                last_message_at=None,
-                unread_count=0
-            )
-
+            if conv_participant_ids == participant_ids:
+                # Found existing conversation with exact same participants
+                stmt = select(Conversation).where(Conversation.id == conv_id)
+                result = await session.execute(stmt)
+                conversation = result.scalar_one()
+                
+                # Get participant info for response
+                stmt = select(User).where(User.id.in_(participant_ids))
+                result = await session.execute(stmt)
+                users = result.scalars().all()
+                
+                participant_names = [u.full_name for u in users if u.id != current_user.id]
+                is_group = len(participant_ids) > 2
+                
+                return ConversationRead(
+                    id=conversation.id,
+                    created_at=conversation.created_at,
+                    other_participant_name=participant_names[0] if len(participant_names) == 1 else None,
+                    participant_names=participant_names,
+                    participant_count=len(participant_ids),
+                    is_group=is_group,
+                    last_message=None,
+                    last_message_at=None,
+                    unread_count=0
+                )
+    
     # Create new conversation
     conversation = Conversation()
     session.add(conversation)
-    await session.flush() # Get ID
-
-    p1 = Participant(user_id=current_user.id, conversation_id=conversation.id)
-    p2 = Participant(user_id=participant_id, conversation_id=conversation.id)
-    session.add_all([p1, p2])
+    await session.flush()  # Get ID
+    
+    # Add all participants
+    for user_id in participant_ids:
+        participant = Participant(user_id=user_id, conversation_id=conversation.id)
+        session.add(participant)
+    
     await session.commit()
     await session.refresh(conversation)
     
-    stmt = select(User).where(User.id == participant_id)
-    res = await session.execute(stmt)
-    other_user = res.scalar_one()
-
+    # Get participant info for response
+    stmt = select(User).where(User.id.in_(participant_ids))
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+    
+    participant_names = [u.full_name for u in users if u.id != current_user.id]
+    is_group = len(participant_ids) > 2
+    
     return ConversationRead(
         id=conversation.id,
         created_at=conversation.created_at,
-        other_participant_name=other_user.full_name,
+        other_participant_name=participant_names[0] if len(participant_names) == 1 else None,
+        participant_names=participant_names,
+        participant_count=len(participant_ids),
+        is_group=is_group,
+        last_message=None,
+        last_message_at=None,
+        unread_count=0
+    )
+
+
+@router.post("/care-team-thread", response_model=ConversationRead)
+async def get_or_create_care_team_conversation(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Get or create the Care Team conversation for the current user.
+    
+    For clients: includes the client + all their assigned professionals/supporters.
+    For professionals/supporters: returns 404 as they don't have a single care team.
+    """
+    if current_user.role != "client":
+        raise HTTPException(
+            status_code=400,
+            detail="Care team conversations are only available for clients"
+        )
+    
+    # Get all assigned professionals/supporters for this client
+    stmt = select(Assignment.professional_id).where(Assignment.client_id == current_user.id)
+    result = await session.execute(stmt)
+    professional_ids = result.scalars().all()
+    
+    if not professional_ids:
+        raise HTTPException(
+            status_code=404,
+            detail="No care team members found. Connect with professionals using invite codes."
+        )
+    
+    # Participant IDs: client + all professionals
+    participant_ids = sorted([current_user.id] + list(professional_ids))
+    
+    # Check if care team conversation already exists
+    stmt = select(Participant.conversation_id).where(Participant.user_id == current_user.id)
+    result = await session.execute(stmt)
+    my_conv_ids = result.scalars().all()
+    
+    if my_conv_ids:
+        # Check each conversation to see if it matches the care team
+        for conv_id in my_conv_ids:
+            stmt = select(Participant.user_id).where(Participant.conversation_id == conv_id)
+            result = await session.execute(stmt)
+            conv_participant_ids = sorted(result.scalars().all())
+            
+            if conv_participant_ids == participant_ids:
+                # Found existing care team conversation
+                stmt = select(Conversation).where(Conversation.id == conv_id)
+                result = await session.execute(stmt)
+                conversation = result.scalar_one()
+                
+                # Get participant info
+                stmt = select(User).where(User.id.in_(participant_ids))
+                result = await session.execute(stmt)
+                users = result.scalars().all()
+                
+                participant_names = [u.full_name for u in users if u.id != current_user.id]
+                
+                return ConversationRead(
+                    id=conversation.id,
+                    created_at=conversation.created_at,
+                    other_participant_name="Care Team",
+                    participant_names=participant_names,
+                    participant_count=len(participant_ids),
+                    is_group=True,
+                    last_message=None,
+                    last_message_at=None,
+                    unread_count=0
+                )
+    
+    # Create new care team conversation
+    conversation = Conversation()
+    session.add(conversation)
+    await session.flush()
+    
+    # Add all participants
+    for user_id in participant_ids:
+        participant = Participant(user_id=user_id, conversation_id=conversation.id)
+        session.add(participant)
+    
+    await session.commit()
+    await session.refresh(conversation)
+    
+    # Get participant info
+    stmt = select(User).where(User.id.in_(participant_ids))
+    result = await session.execute(stmt)
+    users = result.scalars().all()
+    
+    participant_names = [u.full_name for u in users if u.id != current_user.id]
+    
+    return ConversationRead(
+        id=conversation.id,
+        created_at=conversation.created_at,
+        other_participant_name="Care Team",
+        participant_names=participant_names,
+        participant_count=len(participant_ids),
+        is_group=True,
         last_message=None,
         last_message_at=None,
         unread_count=0
@@ -100,14 +224,27 @@ async def list_conversations(
     
     response = []
     for conv in conversations:
-        # Find the "other" participant
-        other_p = next((p for p in conv.participants if p.user_id != current_user.id), None)
-        other_name = "Unknown"
-        if other_p:
-             stmt = select(User).where(User.id == other_p.user_id)
-             res = await session.execute(stmt)
-             u = res.scalar_one_or_none()
-             if u: other_name = u.full_name
+        # Get all participants except current user
+        other_participant_ids = [p.user_id for p in conv.participants if p.user_id != current_user.id]
+        
+        # Fetch user details for other participants
+        participant_names = []
+        if other_participant_ids:
+            stmt = select(User).where(User.id.in_(other_participant_ids))
+            res = await session.execute(stmt)
+            users = res.scalars().all()
+            participant_names = [u.full_name for u in users]
+        
+        # Determine conversation type
+        is_group = len(conv.participants) > 2
+        participant_count = len(conv.participants)
+        
+        # For display: if 1:1, use single name; if group, use "Care Team" or list
+        other_name = None
+        if not is_group and participant_names:
+            other_name = participant_names[0]
+        elif is_group:
+            other_name = "Care Team"
         
         # Get last message
         stmt = (
@@ -156,6 +293,9 @@ async def list_conversations(
             id=conv.id,
             created_at=conv.created_at,
             other_participant_name=other_name,
+            participant_names=participant_names,
+            participant_count=participant_count,
+            is_group=is_group,
             last_message=last_message_text,
             last_message_at=last_message_time,
             unread_count=unread_count

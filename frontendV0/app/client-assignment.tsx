@@ -42,11 +42,9 @@ export default function ClientAssignmentScreen() {
   const loadClients = async () => {
     setLoading(true);
     try {
-      const [all, assigned] = await Promise.all([
-        getClients(true), // all clients
-        getClients(false), // assigned clients
-      ]);
-      setAllClients(all || []);
+      // Only get assigned clients (invite code system handles connections)
+      const assigned = await getClients();
+      setAllClients([]); // Not used in invite code system
       setAssignedClients(assigned || []);
     } catch (err) {
       console.error('Failed to load clients', err);

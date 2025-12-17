@@ -17,21 +17,23 @@ interface BottomNavigationProps {
   activeTab: string;
   onTabPress: (tabId: string) => void;
   tabs: TabItem[];
+  role?: 'client' | 'professional';
 }
 
 export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   activeTab,
   onTabPress,
   tabs,
+  role = 'client',
 }) => {
   const { colorScheme } = useColorScheme();
   const router = useRouter();
 
   const navigateForTab = (tabId: string) => {
-    // Map tab ids to routes in the app
+    // Map tab ids to routes based on role
     switch (tabId) {
       case 'home':
-        router.push('/client-dashboard');
+        router.push(role === 'client' ? '/client-dashboard' : '/professional-dashboard');
         break;
       case 'chat':
         router.push('/chat');
@@ -43,7 +45,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
         router.push('/analytics');
         break;
       case 'profile':
-        router.push('/client-profile');
+        router.push(role === 'client' ? '/client-profile' : '/professional-profile');
         break;
       default:
         // fallback to root

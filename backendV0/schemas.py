@@ -18,7 +18,7 @@ class TokenData(BaseModel):
 class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
-    role: str = Field(default="client", pattern="^(client|doctor|trainer|nutritionist)$")
+    role: str = Field(default="client", pattern="^(client|doctor|trainer|nutritionist|supporter)$")
 
 
 class UserCreate(UserBase):
@@ -39,6 +39,19 @@ class UserUpdate(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class InviteCodeGenerate(BaseModel):
+    expires_in_hours: int = Field(default=24, ge=1, le=168)  # 1 hour to 7 days
+
+
+class InviteCodeRead(BaseModel):
+    invite_code: str
+    expires_at: datetime
+
+
+class ConnectRequest(BaseModel):
+    invite_code: str = Field(min_length=1)
 
 
 class AssignmentCreate(BaseModel):
@@ -110,6 +123,7 @@ class GoalUpdate(BaseModel):
 class GoalRead(GoalCreate):
     id: int
     user_id: int
+    created_by_name: Optional[str] = None  # Computed field - name of creator
 
     class Config:
         from_attributes = True
@@ -149,6 +163,10 @@ class AppointmentRead(AppointmentCreate):
 
 
 
+class ConversationCreate(BaseModel):
+    participant_ids: List[int] = Field(min_length=1)
+
+
 class MessageCreate(BaseModel):
     conversation_id: int
     content: str
@@ -169,7 +187,10 @@ class MessageRead(BaseModel):
 class ConversationRead(BaseModel):
     id: int
     created_at: datetime
-    other_participant_name: Optional[str] = None # Computed field
+    other_participant_name: Optional[str] = None # Computed field - for 1:1 backwards compat
+    participant_names: Optional[List[str]] = None # Computed field - for group chats
+    participant_count: int = 0 # Computed field - total number of participants
+    is_group: bool = False # Computed field - whether this is a group conversation
     last_message: Optional[str] = None # Computed field - preview of last message
     last_message_at: Optional[datetime] = None # Computed field - timestamp of last message
     unread_count: int = 0 # Computed field - number of unread messages

@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import secrets
 
 from ..database import get_session
 from ..deps import get_current_user
@@ -16,7 +17,10 @@ from ..schemas import (
     TaskRead,
     NoteCreate,
     NoteRead,
-    ProfessionalStatsRead
+    ProfessionalStatsRead,
+    InviteCodeGenerate,
+    InviteCodeRead,
+    ConnectRequest
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -47,31 +51,23 @@ async def list_professionals(
 
 @router.get("/clients", response_model=list[UserRead])
 async def list_clients(
-    all_clients: bool = Query(False, description="Show all clients (for assignment UI)"),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """List clients. If all_clients=true, show all clients for assignment. 
-    Otherwise show only assigned clients."""
+    """List clients assigned to the current professional."""
     if current_user.role == "client":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only professionals can view clients",
         )
 
-    if all_clients:
-        # Return all users with client role
-        result = await session.execute(
-            select(User).where(User.role == "client").order_by(User.full_name)
-        )
-    else:
-        # Return only assigned clients
-        result = await session.execute(
-            select(User)
-            .join(Assignment, Assignment.client_id == User.id)
-            .where(Assignment.professional_id == current_user.id)
-            .order_by(User.full_name)
-        )
+    # Return only assigned clients
+    result = await session.execute(
+        select(User)
+        .join(Assignment, Assignment.client_id == User.id)
+        .where(Assignment.professional_id == current_user.id)
+        .order_by(User.full_name)
+    )
     
     return result.scalars().all()
 
@@ -97,6 +93,119 @@ async def get_my_professionals(
     return result.scalars().all()
 
 
+@router.post("/invite-code", response_model=InviteCodeRead, status_code=status.HTTP_201_CREATED)
+async def generate_invite_code(
+    payload: InviteCodeGenerate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Generate an invite code for the current user.
+    
+    Only clients can generate invite codes to allow professionals to connect.
+    The code expires after the specified hours (default 24 hours).
+    """
+    if current_user.role != "client":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only clients can generate invite codes",
+        )
+    
+    # Generate unique 8-character code
+    invite_code = secrets.token_urlsafe(6)  # Generates ~8 chars base64url
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=payload.expires_in_hours)
+    
+    # Update user with new invite code
+    current_user.invite_code = invite_code
+    current_user.invite_code_expires_at = expires_at
+    
+    await session.commit()
+    await session.refresh(current_user)
+    
+    return InviteCodeRead(
+        invite_code=invite_code,
+        expires_at=expires_at
+    )
+
+
+@router.post("/connect", response_model=AssignmentRead, status_code=status.HTTP_201_CREATED)
+async def connect_with_invite_code(
+    payload: ConnectRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Connect to a client using their invite code.
+    
+    Only professionals can use this endpoint to connect to clients.
+    The invite code must be valid and not expired.
+    """
+    if current_user.role == "client":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only professionals can connect using invite codes",
+        )
+    
+    # Find user with matching invite code
+    result = await session.execute(
+        select(User).where(User.invite_code == payload.invite_code)
+    )
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid invite code",
+        )
+    
+    # Check if code has expired
+    if not client.invite_code_expires_at or client.invite_code_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invite code has expired",
+        )
+    
+    # Verify target user is a client
+    if client.role != "client":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invite code is not from a client",
+        )
+    
+    # Check if assignment already exists
+    result = await session.execute(
+        select(Assignment).where(
+            Assignment.client_id == client.id,
+            Assignment.professional_id == current_user.id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="You are already connected to this client",
+        )
+    
+    # Create assignment
+    new_assignment = Assignment(
+        client_id=client.id,
+        professional_id=current_user.id
+    )
+    session.add(new_assignment)
+    
+    # Clear the used invite code
+    client.invite_code = None
+    client.invite_code_expires_at = None
+    
+    await session.commit()
+    await session.refresh(new_assignment)
+    
+    return AssignmentRead(
+        id=new_assignment.id,
+        client_id=new_assignment.client_id,
+        professional_id=new_assignment.professional_id,
+        created_at=new_assignment.created_at
+    )
+
+
 @router.post("/assignments", response_model=AssignmentRead, status_code=status.HTTP_201_CREATED)
 async def create_assignment(
     assignment: AssignmentCreate,
@@ -104,6 +213,9 @@ async def create_assignment(
     session: AsyncSession = Depends(get_session),
 ):
     """Create an assignment between a professional and a client.
+    
+    DEPRECATED: Use /connect endpoint with invite codes instead.
+    This endpoint is kept for backward compatibility but will be removed.
     
     Only professionals can create assignments.
     Professionals can only assign themselves to clients.
@@ -242,33 +354,67 @@ async def get_client_goals(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get goals for a specific client. Only assigned professionals can access."""
-    if current_user.role == "client":
+    """Get all goals for a client. Accessible to the client and all assigned care team members."""
+    
+    # Check if requester is the client themselves or in their care team
+    if current_user.id == client_id:
+        # Client can view their own goals
+        is_authorized = True
+    elif current_user.role == "client":
+        # Other clients cannot view goals
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only professionals can access client data",
+            detail="You can only view your own goals",
         )
+    else:
+        # Check if professional/supporter is assigned to this client
+        result = await session.execute(
+            select(Assignment).where(
+                Assignment.client_id == client_id,
+                Assignment.professional_id == current_user.id
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not assigned to this client",
+            )
+        is_authorized = True
     
-    # Verify assignment exists
-    result = await session.execute(
-        select(Assignment).where(
-            Assignment.client_id == client_id,
-            Assignment.professional_id == current_user.id
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not assigned to this client",
-        )
-    
-    # Get goals
+    # Get ALL goals for this client (collaborative visibility)
     result = await session.execute(
         select(Goal)
         .where(Goal.user_id == client_id)
         .order_by(Goal.id.desc())
     )
-    return result.scalars().all()
+    goals = result.scalars().all()
+    
+    # Enrich with creator names
+    response = []
+    for goal in goals:
+        created_by_name = None
+        if goal.created_by_id:
+            result = await session.execute(
+                select(User).where(User.id == goal.created_by_id)
+            )
+            creator = result.scalar_one_or_none()
+            if creator:
+                created_by_name = creator.full_name
+        
+        response.append(GoalRead(
+            id=goal.id,
+            user_id=goal.user_id,
+            title=goal.title,
+            target_value=goal.target_value,
+            current_value=goal.current_value,
+            unit=goal.unit,
+            progress=goal.progress,
+            status=goal.status,
+            deadline=goal.deadline,
+            created_by_name=created_by_name
+        ))
+    
+    return response
 
 
 @router.get("/clients/{client_id}/tasks", response_model=list[TaskRead])
@@ -363,27 +509,34 @@ async def get_client_notes(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    """Get all notes for a client. Only assigned professionals can access."""
-    if current_user.role == "client":
+    """Get all notes for a client. Accessible to the client and all assigned care team members."""
+    
+    # Check if requester is the client themselves or in their care team
+    if current_user.id == client_id:
+        # Client can view their own notes
+        is_authorized = True
+    elif current_user.role == "client":
+        # Other clients cannot view notes
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only professionals can access notes",
+            detail="You can only view your own notes",
         )
+    else:
+        # Check if professional/supporter is assigned to this client
+        result = await session.execute(
+            select(Assignment).where(
+                Assignment.client_id == client_id,
+                Assignment.professional_id == current_user.id
+            )
+        )
+        if not result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not assigned to this client",
+            )
+        is_authorized = True
     
-    # Verify assignment exists
-    result = await session.execute(
-        select(Assignment).where(
-            Assignment.client_id == client_id,
-            Assignment.professional_id == current_user.id
-        )
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not assigned to this client",
-        )
-    
-    # Get notes
+    # Get ALL notes for this client (collaborative visibility)
     result = await session.execute(
         select(Note)
         .where(Note.client_id == client_id)

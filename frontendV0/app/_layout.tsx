@@ -39,7 +39,6 @@ export default function RootLayout() {
           <Stack.Screen name="client-profile" options={{ headerShown: false }} />
           <Stack.Screen name="client-dashboard" options={{ headerShown: false }} />
           <Stack.Screen name="client-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="client-assignment" options={{ headerShown: false }} />
           <Stack.Screen name="notifications" options={{ headerShown: false }} />
           <Stack.Screen name="appointment-booking" options={{ headerShown: false }} />
           <Stack.Screen name="chat" options={{ headerShown: false }} />

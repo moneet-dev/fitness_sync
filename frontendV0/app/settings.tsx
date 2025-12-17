@@ -15,8 +15,9 @@ import {
     View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import { BottomNavigation, Header, Toggle } from '@/components';
-import { updateUserProfile } from '@/services/api';
+import { updateUserProfile, generateInviteCode } from '@/services/api';
 import { clearAuthToken } from '@/services/auth';
 import { useUser } from '@/context/UserContext';
 
@@ -26,7 +27,10 @@ export default function SettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [inviteModalVisible, setInviteModalVisible] = useState(false);
   const [editedName, setEditedName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [inviteExpiresAt, setInviteExpiresAt] = useState('');
 
   useEffect(() => {
     // Load dark mode preference
@@ -71,6 +75,9 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               await clearAuthToken();
+              // Refresh user context to clear user data
+              await refreshUser();
+              // Navigate to welcome screen
               router.replace('/welcome');
             } catch (error) {
               console.error('Logout failed:', error);
@@ -107,6 +114,45 @@ export default function SettingsScreen() {
   const handleConnectedDevices = () => {
     // TODO: Implement connected devices logic
     console.log('Connected devices pressed');
+  };
+
+  const handleGenerateInviteCode = async () => {
+    try {
+      const response = await generateInviteCode(24); // 24 hours expiry
+      setInviteCode(response.invite_code);
+      setInviteExpiresAt(response.expires_at);
+      setInviteModalVisible(true);
+    } catch (error: any) {
+      console.error('Failed to generate invite code:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate invite code';
+      Alert.alert('Error', errorMessage);
+    }
+  };
+
+  const handleCopyInviteCode = async () => {
+    try {
+      await Clipboard.setStringAsync(inviteCode);
+      Alert.alert('Copied!', 'Invite code copied to clipboard');
+    } catch (error) {
+      console.error('Failed to copy:', error);
+      Alert.alert('Error', 'Failed to copy code to clipboard');
+    }
+  };
+
+  const formatExpiryTime = (expiresAt: string) => {
+    const date = new Date(expiresAt);
+    const now = new Date();
+    const hoursLeft = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60));
+    
+    if (hoursLeft > 24) {
+      const daysLeft = Math.floor(hoursLeft / 24);
+      return `Expires in ${daysLeft} day${daysLeft > 1 ? 's' : ''}`;
+    } else if (hoursLeft > 1) {
+      return `Expires in ${hoursLeft} hours`;
+    } else {
+      const minutesLeft = Math.floor((date.getTime() - now.getTime()) / (1000 * 60));
+      return `Expires in ${minutesLeft} minutes`;
+    }
   };
 
   const handleNotificationPress = () => {
@@ -179,6 +225,22 @@ export default function SettingsScreen() {
         {/* Connections Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Connections</Text>
+          
+          {isClient && (
+            <TouchableOpacity style={styles.connectionItem} onPress={handleGenerateInviteCode}>
+              <View style={styles.connectionLeft}>
+                <View style={styles.connectionIcon}>
+                  <Ionicons name="link" size={20} color="#20B2AA" />
+                </View>
+                <View style={styles.connectionInfo}>
+                  <Text style={styles.connectionTitle}>Invite Professional</Text>
+                  <Text style={styles.connectionSubtitle}>Generate invite code</Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#999" />
+            </TouchableOpacity>
+          )}
+          
           <TouchableOpacity style={styles.connectionItem} onPress={handleConnectedDevices}>
             <View style={styles.connectionLeft}>
               <View style={styles.connectionIcon}>
@@ -237,6 +299,48 @@ export default function SettingsScreen() {
                 onPress={handleSaveProfile}
               >
                 <Text style={styles.modalButtonTextSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Invite Code Modal */}
+      <Modal
+        visible={inviteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInviteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.inviteIconContainer}>
+              <Ionicons name="key" size={40} color="#20B2AA" />
+            </View>
+            <Text style={styles.modalTitle}>Your Invite Code</Text>
+            <Text style={styles.inviteSubtitle}>Share this code with your professional</Text>
+            
+            <View style={styles.inviteCodeContainer}>
+              <Text style={styles.inviteCodeText}>{inviteCode}</Text>
+            </View>
+            
+            {inviteExpiresAt && (
+              <Text style={styles.expiryText}>{formatExpiryTime(inviteExpiresAt)}</Text>
+            )}
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.copyButton]}
+                onPress={handleCopyInviteCode}
+              >
+                <Ionicons name="copy-outline" size={20} color="white" />
+                <Text style={styles.copyButtonText}>Copy Code</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setInviteModalVisible(false)}
+              >
+                <Text style={styles.modalButtonTextCancel}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -441,6 +545,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modalButtonTextSave: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  inviteIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#E0F7FA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  inviteSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  inviteCodeContainer: {
+    backgroundColor: '#F0F0F0',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  inviteCodeText: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#20B2AA',
+    letterSpacing: 4,
+    fontFamily: 'monospace',
+  },
+  expiryText: {
+    fontSize: 13,
+    color: '#FF9800',
+    textAlign: 'center',
+    marginBottom: 24,
+    fontWeight: '500',
+  },
+  copyButton: {
+    backgroundColor: '#20B2AA',
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  copyButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',

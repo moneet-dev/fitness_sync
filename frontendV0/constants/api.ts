@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 
 const configured = (Constants.expoConfig && (Constants.expoConfig.extra as any)?.API_URL) || (Constants.manifest && (Constants.manifest.extra as any)?.API_URL);
 
-export const API_URL = configured || 'http://0.0.0.0:8000';
+export const API_URL = configured || 'http://localhost:8000';
 
 // Helper in case other modules prefer a function
 export const getApiUrl = () => API_URL;

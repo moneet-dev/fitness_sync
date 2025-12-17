@@ -100,7 +100,34 @@ async def list_goals(
     result = await session.execute(
         select(Goal).where(Goal.user_id == current_user.id).order_by(Goal.id.desc())
     )
-    return result.scalars().all()
+    goals = result.scalars().all()
+    
+    # Enrich with creator names
+    response = []
+    for goal in goals:
+        created_by_name = None
+        if goal.created_by_id:
+            result = await session.execute(
+                select(User).where(User.id == goal.created_by_id)
+            )
+            creator = result.scalar_one_or_none()
+            if creator:
+                created_by_name = creator.full_name
+        
+        response.append(GoalRead(
+            id=goal.id,
+            user_id=goal.user_id,
+            title=goal.title,
+            target_value=goal.target_value,
+            current_value=goal.current_value,
+            unit=goal.unit,
+            progress=goal.progress,
+            status=goal.status,
+            deadline=goal.deadline,
+            created_by_name=created_by_name
+        ))
+    
+    return response
 
 
 @router.post("/goals", response_model=GoalRead, status_code=status.HTTP_201_CREATED)
@@ -109,11 +136,30 @@ async def create_goal(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
-    goal = Goal(user_id=current_user.id, **payload.model_dump(exclude_unset=True))
+    goal = Goal(
+        user_id=current_user.id,
+        created_by_id=current_user.id,
+        **payload.model_dump(exclude_unset=True)
+    )
     session.add(goal)
     await session.commit()
     await session.refresh(goal)
-    return goal
+    
+    # Get creator name
+    created_by_name = current_user.full_name
+    
+    return GoalRead(
+        id=goal.id,
+        user_id=goal.user_id,
+        title=goal.title,
+        target_value=goal.target_value,
+        current_value=goal.current_value,
+        unit=goal.unit,
+        progress=goal.progress,
+        status=goal.status,
+        deadline=goal.deadline,
+        created_by_name=created_by_name
+    )
 
 
 @router.patch("/goals/{goal_id}", response_model=GoalRead)

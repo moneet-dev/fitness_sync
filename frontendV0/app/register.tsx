@@ -94,6 +94,7 @@ export default function Register() {
     { id: 'Doctor', title: 'Doctor', iconName: 'medical' as const },
     { id: 'Trainer', title: 'Trainer', iconName: 'fitness' as const },
     { id: 'Nutritionist', title: 'Nutritionist', iconName: 'nutrition' as const },
+    { id: 'Supporter', title: 'Family/Friend', iconName: 'people' as const },
   ];
 
   return (

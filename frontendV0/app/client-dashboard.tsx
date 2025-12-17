@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { BottomNavigation, MetricCard, TaskCard } from '@/components';
-import { getAppointments, getMetrics, getProfessionals, getTasks, getGoals } from '@/services/api';
+import { getAppointments, getMetrics, getMyProfessionals, getTasks, getGoals } from '@/services/api';
 import { APP_NAME } from '@/constants/theme';
 
 // Define types for our data
@@ -76,7 +76,7 @@ export default function ClientDashboardScreenRoute() {
           getMetrics(),
           getTasks(),
           getAppointments(),
-          getProfessionals(),
+          getMyProfessionals(),
           getGoals(),
         ]);
         setMetrics(metricsData);
@@ -314,6 +314,105 @@ export default function ClientDashboardScreenRoute() {
       alignItems: 'center',
       marginBottom: 12,
     },
+    careTeamCard: {
+      backgroundColor: colorScheme === 'dark' ? '#222' : 'white',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    careTeamLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
+    careTeamAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: '#20B2AA',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: 12,
+    },
+    careTeamInfo: {
+      flex: 1,
+    },
+    careTeamName: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colorScheme === 'dark' ? 'white' : '#333',
+      marginBottom: 4,
+    },
+    careTeamRole: {
+      fontSize: 14,
+      color: '#666',
+    },
+    careTeamChatButton: {
+      backgroundColor: '#20B2AA',
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      marginBottom: 16,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 4,
+      elevation: 4,
+    },
+    careTeamChatButtonText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    careTeamMessageButton: {
+      padding: 8,
+      backgroundColor: '#E0F7FA',
+      borderRadius: 8,
+    },
+    emptyStateCard: {
+      backgroundColor: colorScheme === 'dark' ? '#222' : 'white',
+      borderRadius: 12,
+      padding: 32,
+      alignItems: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    emptyStateText: {
+      fontSize: 16,
+      color: '#666',
+      marginTop: 16,
+      marginBottom: 20,
+      textAlign: 'center',
+    },
+    inviteButton: {
+      backgroundColor: '#20B2AA',
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    inviteButtonText: {
+      color: 'white',
+      fontSize: 14,
+      fontWeight: '600',
+    },
   });
 
   if (loading) {
@@ -429,6 +528,87 @@ export default function ClientDashboardScreenRoute() {
           </View>
         </View>
 
+        {/* My Care Team Section */}
+        <View style={styles.section}>
+          <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16}}>
+            <Text style={styles.sectionTitle}>My Care Team</Text>
+            <TouchableOpacity onPress={() => router.push('/settings')}>
+              <Text style={{color: '#20B2AA', fontSize: 14, fontWeight: '600'}}>Invite</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Care Team Chat Button */}
+          {professionals.length > 0 && (
+            <TouchableOpacity 
+              style={styles.careTeamChatButton}
+              onPress={async () => {
+                try {
+                  const { getCareTeamConversation } = await import('@/services/api');
+                  const conversation = await getCareTeamConversation();
+                  router.push({ pathname: '/chat', params: { conversationId: conversation.id } });
+                } catch (err: any) {
+                  console.error('Failed to open care team chat', err);
+                  if (err?.message?.includes('No care team members')) {
+                    alert('Connect with professionals first to start the care team chat');
+                  } else {
+                    alert('Failed to open care team chat');
+                  }
+                }
+              }}
+            >
+              <Ionicons name="chatbubbles" size={20} color="white" />
+              <Text style={styles.careTeamChatButtonText}>Chat with Care Team</Text>
+            </TouchableOpacity>
+          )}
+          
+          {professionals.length > 0 ? (
+            professionals.map((prof) => (
+              <View key={prof.id} style={styles.careTeamCard}>
+                <View style={styles.careTeamLeft}>
+                  <View style={styles.careTeamAvatar}>
+                    <Ionicons name="person" size={24} color="white" />
+                  </View>
+                  <View style={styles.careTeamInfo}>
+                    <Text style={styles.careTeamName}>{prof.full_name}</Text>
+                    <Text style={styles.careTeamRole}>Healthcare Professional</Text>
+                  </View>
+                </View>
+                <TouchableOpacity 
+                  style={styles.careTeamMessageButton}
+                  onPress={async () => {
+                    try {
+                      const { getCareTeamConversation } = await import('@/services/api');
+                      const conversation = await getCareTeamConversation();
+                      router.push({ pathname: '/chat', params: { conversationId: conversation.id } });
+                    } catch (err: any) {
+                      console.error('Failed to open care team chat', err);
+                      if (err?.message?.includes('No care team members')) {
+                        alert('Connect with professionals first to start the care team chat');
+                      } else {
+                        alert('Failed to open care team chat');
+                      }
+                    }
+                  }}
+                >
+                  <Ionicons name="chatbubble-outline" size={20} color="#20B2AA" />
+                </TouchableOpacity>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyStateCard}>
+              <Ionicons name="people-outline" size={48} color="#999" />
+              <Text style={styles.emptyStateText}>No professionals connected yet</Text>
+              <TouchableOpacity 
+                style={styles.inviteButton}
+                onPress={() => router.push('/settings')}
+              >
+                <Ionicons name="link-outline" size={20} color="white" />
+                <Text style={styles.inviteButtonText}>Use Invite Code</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Next Appointment</Text>
           {nextAppointment ? (
@@ -462,31 +642,6 @@ export default function ClientDashboardScreenRoute() {
             <Text>No upcoming appointments.</Text>
           )}
         </View>
-
-        <TouchableOpacity
-          style={styles.messageButton}
-          onPress={async () => {
-            console.log('Message Professionals button pressed');
-            // For MVP, we'll just pick the first professional or a specific one
-            // In a real app, this would likely open a modal to select a professional
-            const targetProfessional = professionals[0];
-            if (targetProfessional) {
-              try {
-                const { createConversation } = await import('@/services/api');
-                const conversation = await createConversation(targetProfessional.id);
-                router.push({ pathname: '/chat', params: { conversationId: conversation.id } });
-              } catch (err) {
-                console.error('Failed to start conversation', err);
-                alert('Failed to start conversation');
-              }
-            } else {
-              alert('No professionals available to message');
-            }
-          }}
-        >
-          <Ionicons name="chatbubble" size={20} color="white" />
-          <Text style={styles.messageButtonText}>Message Professionals</Text>
-        </TouchableOpacity>
       </ScrollView>
 
       <BottomNavigation

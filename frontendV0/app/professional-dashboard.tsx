@@ -4,16 +4,19 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { BottomNavigation, ClientCard, MetricCard } from '@/components';
-import { getClients, createConversation, getProfessionalStats, getAppointments } from '@/services/api';
+import { getClients, createConversation, getProfessionalStats, getAppointments, connectWithCode } from '@/services/api';
 import { APP_NAME } from '@/constants/theme';
 
 interface Client {
@@ -42,13 +45,15 @@ export default function ProfessionalDashboardScreenRoute() {
   const [stats, setStats] = useState<ProfessionalStats | null>(null);
   const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [connectModalVisible, setConnectModalVisible] = useState(false);
+  const [inviteCodeInput, setInviteCodeInput] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         const [clientsData, statsData, appointmentsData] = await Promise.all([
-          getClients(false), // Get assigned clients only
+          getClients(), // Get assigned clients only
           getProfessionalStats(),
           getAppointments(),
         ]);
@@ -78,7 +83,29 @@ export default function ProfessionalDashboardScreenRoute() {
   };
 
   const handleAssignClients = () => {
-    router.push('/client-assignment');
+    setConnectModalVisible(true);
+  };
+
+  const handleConnectWithCode = async () => {
+    if (!inviteCodeInput || inviteCodeInput.trim() === '') {
+      Alert.alert('Error', 'Please enter an invite code');
+      return;
+    }
+
+    try {
+      await connectWithCode(inviteCodeInput.trim());
+      Alert.alert('Success', 'Connected to client successfully!');
+      setConnectModalVisible(false);
+      setInviteCodeInput('');
+      
+      // Refresh clients list
+      const clientsData = await getClients();
+      setClients(clientsData);
+    } catch (error: any) {
+      console.error('Failed to connect:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to connect with code';
+      Alert.alert('Error', errorMessage);
+    }
   };
 
   const handleProfilePress = () => {
@@ -241,6 +268,87 @@ export default function ProfessionalDashboardScreenRoute() {
       color: '#999',
       textTransform: 'capitalize',
     },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalContent: {
+      backgroundColor: 'white',
+      borderRadius: 16,
+      padding: 24,
+      width: '90%',
+      maxWidth: 400,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+    modalIconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: '#E0F7FA',
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'center',
+      marginBottom: 16,
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#333',
+      textAlign: 'center',
+      marginBottom: 8,
+    },
+    modalSubtitle: {
+      fontSize: 14,
+      color: '#666',
+      textAlign: 'center',
+      marginBottom: 24,
+    },
+    modalInput: {
+      borderWidth: 1,
+      borderColor: '#E0E0E0',
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 16,
+      marginBottom: 20,
+      backgroundColor: '#FAFAFA',
+      textAlign: 'center',
+      fontFamily: 'monospace',
+      letterSpacing: 2,
+      textTransform: 'uppercase',
+    },
+    modalButtons: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    modalButton: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    modalButtonCancel: {
+      backgroundColor: '#F5F5F5',
+    },
+    modalButtonConnect: {
+      backgroundColor: '#20B2AA',
+    },
+    modalButtonTextCancel: {
+      color: '#666',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    modalButtonTextConnect: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: '600',
+    },
   });
 
   if (loading) {
@@ -355,9 +463,9 @@ export default function ProfessionalDashboardScreenRoute() {
             }}
             onPress={handleAssignClients}
           >
-            <Ionicons name="person-add" size={24} color="white" />
+            <Ionicons name="key" size={24} color="white" />
             <Text style={{color: 'white', fontSize: 16, fontWeight: '600', marginLeft: 8}}>
-              Assign New Clients
+              Connect with Client
             </Text>
           </TouchableOpacity>
         </View>
@@ -389,6 +497,51 @@ export default function ProfessionalDashboardScreenRoute() {
         tabs={bottomTabs}
         role="professional"
       />
+
+      {/* Connect with Code Modal */}
+      <Modal
+        visible={connectModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConnectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconContainer}>
+              <Ionicons name="link" size={40} color="#20B2AA" />
+            </View>
+            <Text style={styles.modalTitle}>Connect with Client</Text>
+            <Text style={styles.modalSubtitle}>Enter the invite code provided by your client</Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              value={inviteCodeInput}
+              onChangeText={setInviteCodeInput}
+              placeholder="Enter invite code"
+              autoCapitalize="characters"
+              autoFocus
+            />
+            
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => {
+                  setConnectModalVisible(false);
+                  setInviteCodeInput('');
+                }}
+              >
+                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonConnect]}
+                onPress={handleConnectWithCode}
+              >
+                <Text style={styles.modalButtonTextConnect}>Connect</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

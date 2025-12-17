@@ -20,6 +20,7 @@ UserRole = Enum(
     "doctor",
     "trainer",
     "nutritionist",
+    "supporter",
     name="user_roles",
 )
 
@@ -32,6 +33,8 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     role: Mapped[str] = mapped_column(UserRole, nullable=False, default="client")
+    invite_code: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True, unique=True)
+    invite_code_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
@@ -94,6 +97,7 @@ class Goal(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title: Mapped[str] = mapped_column(String)
     target_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     current_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

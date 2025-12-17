@@ -29,6 +29,7 @@ interface Goal {
   current_value?: number;
   unit?: string;
   user_id?: number;
+  created_by_name?: string;
 }
 
 interface Client {
@@ -71,7 +72,7 @@ export default function GoalSettingScreenRoute() {
   const fetchClients = async () => {
     if (isProfessional) {
       try {
-        const clientsData = await getClients(false); // Get assigned clients
+        const clientsData = await getClients(); // Get assigned clients
         setClients(clientsData);
         if (clientsData.length > 0) {
           setSelectedClient(clientsData[0]);
@@ -252,11 +253,14 @@ export default function GoalSettingScreenRoute() {
               {clients.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Text style={styles.emptyText}>No clients assigned yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    Share your invite code with clients to connect with them
+                  </Text>
                   <TouchableOpacity
                     style={styles.assignButton}
-                    onPress={() => router.push('/client-assignment')}
+                    onPress={() => router.push('/professional-dashboard')}
                   >
-                    <Text style={styles.assignButtonText}>Assign Clients</Text>
+                    <Text style={styles.assignButtonText}>View My Invite Code</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -287,7 +291,7 @@ export default function GoalSettingScreenRoute() {
                   id={goal.id}
                   title={goal.title}
                   deadline={goal.deadline}
-                  assignedBy={"Myself"} // Placeholder
+                  assignedBy={goal.created_by_name || "Myself"}
                   status={goal.status as any}
                   progress={goal.progress}
                   target_value={goal.target_value}
@@ -568,6 +572,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     marginBottom: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 16,
+    textAlign: 'center',
   },
   assignButton: {
     backgroundColor: '#20B2AA',

@@ -243,8 +243,9 @@ export default function ClientDetailScreen() {
                 goals.map((goal) => (
                   <GoalCard
                     key={goal.id}
+                    id={goal.id}
                     title={goal.title}
-                    assignedBy={goal.assigned_by || 'Self'}
+                    assignedBy={goal.created_by_name || 'Not specified'}
                     progress={goal.progress}
                     deadline={goal.deadline}
                     status={goal.status === 'completed' ? 'Completed' : goal.status === 'in-progress' ? 'In Progress' : 'Pending'}

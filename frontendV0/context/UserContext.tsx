@@ -16,6 +16,8 @@ interface UserContextType {
   refreshUser: () => Promise<void>;
   isClient: boolean;
   isProfessional: boolean;
+  isCareTeamMember: boolean;
+  isSupporter: boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -62,6 +64,8 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
 
   const isClient = user?.role === 'client';
   const isProfessional = user?.role === 'doctor' || user?.role === 'trainer' || user?.role === 'nutritionist';
+  const isSupporter = user?.role === 'supporter';
+  const isCareTeamMember = isProfessional || isSupporter;
 
   return (
     <UserContext.Provider
@@ -72,6 +76,8 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
         refreshUser,
         isClient,
         isProfessional,
+        isCareTeamMember,
+        isSupporter,
       }}
     >
       {children}
